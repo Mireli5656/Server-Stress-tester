@@ -1,5 +1,5 @@
 # Usage
-git clone
+git clone https://github.com/Mireli5656/Server-Stress-tester
 
 
 
