@@ -51,6 +51,8 @@ def main():
     p.add_argument("--duration", type=int, default=20, help="Seconds (max 120)")
     p.add_argument("--rps", type=int, default=50, help="Target total RPS (max 500)")
     p.add_argument("--header", action="append", default=[], help="Header as Key:Value")
+    p.add_argument("--data", default=None,
+                   help="Request body for POST. Use @file.json to read the body from a file")
     args = p.parse_args()
 
     # Safety caps for Termux / controlled testing
@@ -64,25 +66,45 @@ def main():
         print("Cap: duration max 120s")
         return
 
+    # Request body
+    payload = None
+    if args.data is not None:
+        if args.method != "POST":
+            p.error("--data requires --method POST")
+        if args.data.startswith("@"):
+            try:
+                with open(args.data[1:], "rb") as f:
+                    payload = f.read()
+            except OSError as e:
+                p.error(f"Cannot read body file: {e}")
+        else:
+            payload = args.data.encode("utf-8")
+
     headers = {"User-Agent": "Termux-LoadTester/1.0"}
     for h in args.header:
         if ":" in h:
             k, v = h.split(":", 1)
             headers[k.strip()] = v.strip()
 
+    # Default Content-Type for a body, unless the user set one with --header
+    if payload is not None and not any(k.lower() == "content-type" for k in headers):
+        headers["Content-Type"] = "application/json"
+
     # Per-thread delay to hit target RPS
     rps_per_thread = args.rps / args.threads if args.threads else 0
     delay = 1.0 / rps_per_thread if rps_per_thread > 0 else 0
 
     print(f"Testing {args.url}")
-    print(f"Threads={args.threads} Duration={args.duration}s Target RPS={args.rps}")
+    print(f"Method={args.method} Threads={args.threads} Duration={args.duration}s Target RPS={args.rps}")
+    if payload is not None:
+        print(f"Body: {len(payload)} bytes")
     print("Only test a server you own. Starting in 3s... Ctrl+C to stop")
     time.sleep(3)
 
     start_time = time.time()
     threads = []
     for _ in range(args.threads):
-        t = threading.Thread(target=worker, args=(args.url, args.method, args.duration, delay, headers, None), daemon=True)
+        t = threading.Thread(target=worker, args=(args.url, args.method, args.duration, delay, headers, payload), daemon=True)
         t.start()
         threads.append(t)
 
